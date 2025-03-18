@@ -1,0 +1,63 @@
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      
+  taskiq-worker:
+    build: .
+    command: 
+      - bash
+      - -c
+      - |
+        echo "▶️ TaskIQ Worker Starting..."
+        echo "🔍 Checking registered tasks in Redis..."
+        redis-cli -h redis KEYS 'taskiq:*' | xargs -I{} redis-cli -h redis GET {}
+        echo "🚀 Starting worker..."
+        python -m taskiq worker --log-level=DEBUG app.tq:broker
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    environment:
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379/0
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "redis", "EXISTS", "taskiq:scheduled_tasks"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  taskiq-scheduler:
+    build: .
+    command: 
+      - bash
+      - -c
+      - |
+        echo "⏰ TaskIQ Scheduler Starting..."
+        echo "📋 Scheduled tasks list:"
+        redis-cli -h redis HGETALL taskiq:schedules
+        python -m taskiq scheduler --log-level=DEBUG app.tq:scheduler
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    environment:
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379/0
+    
