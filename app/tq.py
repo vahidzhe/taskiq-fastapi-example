@@ -22,4 +22,4 @@ scheduler = TaskiqScheduler(
 
 taskiq_fastapi.init(broker, 'app.main:app')
 
-from app import tasks      
+# from app import tasks      

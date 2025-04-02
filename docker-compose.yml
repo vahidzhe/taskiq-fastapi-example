@@ -1,63 +1,48 @@
 
 services:
   web:
-    build: .
+    build:
+      context: .
     ports:
       - "8000:8000"
     volumes:
       - ./:/app
+    entrypoint: ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+    restart: unless-stopped
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
+    restart: unless-stopped
       
   taskiq-worker:
-    build: .
-    command: 
-      - bash
-      - -c
-      - |
-        echo "▶️ TaskIQ Worker Starting..."
-        echo "🔍 Checking registered tasks in Redis..."
-        redis-cli -h redis KEYS 'taskiq:*' | xargs -I{} redis-cli -h redis GET {}
-        echo "🚀 Starting worker..."
-        python -m taskiq worker --log-level=DEBUG app.tq:broker
-    depends_on:
-      redis:
-        condition: service_healthy
+    build:
+      context: .
+    command: taskiq worker -tp=app/tasks/*.py -tp=app/tasks/**/*.py --reload --log-level=DEBUG app.tq:broker
     volumes:
       - ./:/app
     environment:
-      PYTHONPATH: /app
-      REDIS_URL: redis://redis:6379/0
-    healthcheck:
-      test: ["CMD", "redis-cli", "-h", "redis", "EXISTS", "taskiq:scheduled_tasks"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      - REDIS_URL=${REDIS_URL}
+    env_file:
+      - .env
+    depends_on:
+      - web
+      - redis
+    restart: unless-stopped
 
   taskiq-scheduler:
-    build: .
-    command: 
-      - bash
-      - -c
-      - |
-        echo "⏰ TaskIQ Scheduler Starting..."
-        echo "📋 Scheduled tasks list:"
-        redis-cli -h redis HGETALL taskiq:schedules
-        python -m taskiq scheduler --log-level=DEBUG app.tq:scheduler
-    depends_on:
-      redis:
-        condition: service_healthy
+    build:
+      context: .
+    command: taskiq scheduler -tp=app/tasks/*.py -tp=app/tasks/**/*.py --log-level=DEBUG app.tq:scheduler
     volumes:
       - ./:/app
     environment:
-      PYTHONPATH: /app
-      REDIS_URL: redis://redis:6379/0
+      - REDIS_URL=${REDIS_URL}
+    env_file:
+      - .env
+    depends_on:
+      - web
+      - redis
+      - taskiq-worker
+    restart: unless-stopped
     

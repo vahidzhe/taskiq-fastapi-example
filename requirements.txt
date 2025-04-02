@@ -1,7 +1,7 @@
 fastapi
-uvicorn
-taskiq
-taskiq-redis
 fastapi-mail
 redis
+taskiq[reload]
 taskiq-fastapi
+taskiq-redis
+uvicorn
